@@ -1,12 +1,10 @@
 
-; flat assembler interface for Linux x64
+; flat assembler interface for Linux
 ; Copyright (c) 1999-2022, Tomasz Grysztar.
 ; All rights reserved.
 
-	format	ELF64 executable 3 at 400000h
+	format	ELF executable 3
 	entry	start
-
-	include 'modes.inc'
 
 segment readable executable
 
@@ -16,10 +14,10 @@ start:
 	mov	esi,_logo
 	call	display_string
 
-	mov	[command_line],rsp
-	mov	rcx,[rsp]
-	lea	rbx,[rsp+8+rcx*8+8]
-	mov	[environment],rbx
+	mov	[command_line],esp
+	mov	ecx,[esp]
+	lea	ebx,[esp+4+ecx*4+4]
+	mov	[environment],ebx
 	call	get_params
 	jc	information
 
@@ -36,10 +34,10 @@ start:
 	mov	esi,_memory_suffix
 	call	display_string
 
-	mov	eax,96
-	mov	edi,buffer
-	xor	esi,esi
-	syscall
+	mov	eax,78
+	mov	ebx,buffer
+	xor	ecx,ecx
+	int	0x80
 	mov	eax,dword [buffer]
 	mov	ecx,1000
 	mul	ecx
@@ -62,10 +60,10 @@ start:
 	call	display_number
 	mov	esi,_passes_suffix
 	call	display_string
-	mov	eax,96
-	mov	edi,buffer
-	xor	esi,esi
-	syscall
+	mov	eax,78
+	mov	ebx,buffer
+	xor	ecx,ecx
+	int	0x80
 	mov	eax,dword [buffer]
 	mov	ecx,1000
 	mul	ecx
@@ -108,36 +106,33 @@ information:
 	jmp	exit_program
 
 get_params:
-	mov	rbx,[command_line]
+	mov	ebx,[command_line]
 	mov	[input_file],0
 	mov	[output_file],0
 	mov	[symbols_file],0
 	mov	[memory_setting],0
 	mov	[passes_limit],100
-	mov	rcx,[rbx]
-	add	rbx,8*2
-	dec	rcx
+	mov	ecx,[ebx]
+	add	ebx,8
+	dec	ecx
 	jz	bad_params
 	mov	[definitions_pointer],predefinitions
-	mov	[path_pointer],paths
       get_param:
-	mov	rsi,[rbx]
-	mov	al,[rsi]
+	mov	esi,[ebx]
+	mov	al,[esi]
 	cmp	al,'-'
 	je	option_param
 	cmp	[input_file],0
 	jne	get_output_file
-	call	collect_path
-	mov	[input_file],edx
+	mov	[input_file],esi
 	jmp	next_param
       get_output_file:
 	cmp	[output_file],0
 	jne	bad_params
-	call	collect_path
-	mov	[output_file],edx
+	mov	[output_file],esi
 	jmp	next_param
       option_param:
-	inc	rsi
+	inc	esi
 	lodsb
 	cmp	al,'m'
 	je	memory_option
@@ -159,12 +154,12 @@ get_params:
 	stc
 	ret
       memory_option:
-	cmp	byte [rsi],0
+	cmp	byte [esi],0
 	jne	get_memory_setting
-	dec	rcx
+	dec	ecx
 	jz	bad_params
-	add	rbx,8
-	mov	rsi,[rbx]
+	add	ebx,4
+	mov	esi,[ebx]
       get_memory_setting:
 	call	get_option_value
 	or	edx,edx
@@ -174,12 +169,12 @@ get_params:
 	mov	[memory_setting],edx
 	jmp	next_param
       passes_option:
-	cmp	byte [rsi],0
+	cmp	byte [esi],0
 	jne	get_passes_setting
-	dec	rcx
+	dec	ecx
 	jz	bad_params
-	add	rbx,8
-	mov	rsi,[rbx]
+	add	ebx,4
+	mov	esi,[ebx]
       get_passes_setting:
 	call	get_option_value
 	or	edx,edx
@@ -188,8 +183,8 @@ get_params:
 	ja	bad_params
 	mov	[passes_limit],dx
       next_param:
-	add	rbx,8
-	dec	rcx
+	add	ebx,4
+	dec	ecx
 	jnz	get_param
 	cmp	[input_file],0
 	je	bad_params
@@ -199,30 +194,29 @@ get_params:
 	clc
 	ret
       definition_option:
-	cmp	byte [rsi],0
+	cmp	byte [esi],0
 	jne	get_definition
-	dec	rcx
+	dec	ecx
 	jz	bad_params
-	add	rbx,8
-	mov	rsi,[rbx]
+	add	ebx,4
+	mov	esi,[ebx]
       get_definition:
-	mov	r12d,edi
+	push	edi
 	mov	edi,[definitions_pointer]
 	call	convert_definition_option
 	mov	[definitions_pointer],edi
-	mov	edi,r12d
+	pop	edi
 	jc	bad_params
 	jmp	next_param
       symbols_option:
-	cmp	byte [rsi],0
+	cmp	byte [esi],0
 	jne	get_symbols_setting
-	dec	rcx
+	dec	ecx
 	jz	bad_params
-	add	rbx,8
-	mov	rsi,[rbx]
+	add	ebx,4
+	mov	esi,[ebx]
       get_symbols_setting:
-	call	collect_path
-	mov	[symbols_file],edx
+	mov	[symbols_file],esi
 	jmp	next_param
       get_option_value:
 	xor	eax,eax
@@ -243,7 +237,7 @@ get_params:
 	jc	invalid_option_value
 	jmp	get_option_digit
       option_value_ok:
-	dec	rsi
+	dec	esi
 	clc
 	ret
       invalid_option_value:
@@ -282,27 +276,17 @@ get_params:
 	stosb
 	jmp	copy_definition_value
       definition_value_end:
-	dec	rsi
+	dec	esi
 	cmp	edi,predefinitions+1000h
 	jae	bad_definition_option
 	xor	al,al
 	stosb
 	clc
 	ret
-collect_path:
-	mov	edi,[path_pointer]
-	mov	edx,edi
-     copy_path_to_low_memory:
-	lodsb
-	stosb
-	test	al,al
-	jnz	copy_path_to_low_memory
-	mov	[path_pointer],edi
-	retn
 
 include 'system.inc'
 
-include '..\..\version.inc'
+include '..\version.inc'
 
 _copyright db 'Copyright (c) 1999-2022, Tomasz Grysztar',0xA,0
 
@@ -316,37 +300,35 @@ _usage db 0xA
        db ' -s <file>          dump symbolic information for debugging',0xA
        db 0
 _memory_prefix db '  (',0
-_memory_suffix db ' kilobytes memory, x64)',0xA,0
+_memory_suffix db ' kilobytes memory)',0xA,0
 _passes_suffix db ' passes, ',0
 _seconds_suffix db ' seconds, ',0
 _bytes_suffix db ' bytes.',0xA,0
-_no_low_memory db 'failed to allocate memory within 32-bit addressing range',0
 
-include '..\..\errors.inc'
-include '..\..\symbdump.inc'
-include '..\..\preproce.inc'
-include '..\..\parser.inc'
-include '..\..\exprpars.inc'
-include '..\..\assemble.inc'
-include '..\..\exprcalc.inc'
-include '..\..\x86_64.inc'
-include '..\..\avx.inc'
-include '..\..\formats.inc'
+include '..\errors.inc'
+include '..\symbdump.inc'
+include '..\preproce.inc'
+include '..\parser.inc'
+include '..\exprpars.inc'
+include '..\assemble.inc'
+include '..\exprcalc.inc'
+include '..\formats.inc'
+include '..\x86_64.inc'
+include '..\avx.inc'
 
-include '..\..\tables.inc'
-include '..\..\messages.inc'
+include '..\tables.inc'
+include '..\messages.inc'
 
 segment readable writeable
 
 align 4
 
-include '..\..\variable.inc'
+include '..\variable.inc'
 
-command_line dq ?
+command_line dd ?
 memory_setting dd ?
-path_pointer dd ?
 definitions_pointer dd ?
-environment dq ?
+environment dd ?
 timestamp dq ?
 start_time dd ?
 con_handle dd ?
@@ -355,6 +337,5 @@ last_displayed db ?
 character db ?
 preprocessing_done db ?
 
-buffer rb 1000h
 predefinitions rb 1000h
-paths rb 10000h
+buffer rb 1000h
