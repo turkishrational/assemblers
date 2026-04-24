@@ -1,0 +1,8 @@
+use32
+org 0x0
+
+MOV EDI,[EBP+0x08]
+MOV EAX,[EBP+0x0C]
+MOV ECX,[EBP+0x10]
+REP STOSB
+
